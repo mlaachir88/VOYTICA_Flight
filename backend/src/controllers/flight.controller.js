@@ -9,15 +9,12 @@ const validateIATACode = (code) => {
 
 exports.searchFlights = async (req, res) => {
   try {
-    const { from, to, date, currency = "EUR" } = req.body;
+    const { from, to, date, returnDate, currency = "EUR" } = req.body;
 
     if (!from || !to || !date) {
-      return res.status(400).json({
-        error: "from, to, and date are required",
-      });
+      return res.status(400).json({ error: "from, to, and date are required" });
     }
 
-    // ✅ VALIDATION des codes IATA
     const fromAirport = validateIATACode(from);
     const toAirport = validateIATACode(to);
 
@@ -35,11 +32,17 @@ exports.searchFlights = async (req, res) => {
       });
     }
 
-    // ✅ Tout est bon, on cherche les vols
+    // (optionnel mais propre) : si returnDate existe, vérifier qu’il est pas vide
+    const cleanReturnDate =
+      typeof returnDate === "string" && returnDate.trim() !== ""
+        ? returnDate.trim()
+        : null;
+
     const flights = await flightProvider.searchFlights({
       from: from.toUpperCase(),
       to: to.toUpperCase(),
       date,
+      returnDate: cleanReturnDate, // ✅ NEW
       currency,
     });
 

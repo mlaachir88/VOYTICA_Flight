@@ -1,43 +1,42 @@
 // src/lib/api.ts
+import { dedupeKeepCheapest } from "./flights.utils";
 
+// ✅ AJOUT de returnDate
 export interface FlightSearchParams {
-  from: string; // ex: "PAR"
-  to: string;   // ex: "CMN"
-  date: string; // ex: "2026-02-05"
+  from: string;
+  to: string;
+  date: string;
+  returnDate?: string | null; // 🔥 AJOUTÉ
+  currency?: string; // bonus
 }
 
-/**
- * Modèle utilisé par tout le frontend (Search.tsx, FlightCard, Map, etc.)
- * Il est volontairement large et optionnel pour ne rien casser même si
- * certains champs ne sont pas encore renvoyés par le backend.
- */
 export interface FlightOffer {
   id: string;
 
   // Compagnie
-  airlineName?: string;      // ex: "Royal Air Maroc"
-  airlineCode?: string;      // ex: "AT"
-  airlineLogoUrl?: string;   // URL logo Duffel
+  airlineName?: string;
+  airlineCode?: string;
+  airlineLogoUrl?: string;
 
   // Départ
-  departureAirportCode?: string;  // ex: "CDG"
-  departureAirportName?: string;  // ex: "Paris Charles de Gaulle"
-  departureCity?: string;         // ex: "Paris"
-  departureTime?: string;         // ISO ex: "2026-02-05T15:20:00"
+  departureAirportCode?: string;
+  departureAirportName?: string;
+  departureCity?: string;
+  departureTime?: string;
 
   // Arrivée
-  arrivalAirportCode?: string;    // ex: "CMN"
-  arrivalAirportName?: string;    // ex: "Mohammed V International Airport"
-  arrivalCity?: string;           // ex: "Casablanca"
-  arrivalTime?: string;           // ISO
+  arrivalAirportCode?: string;
+  arrivalAirportName?: string;
+  arrivalCity?: string;
+  arrivalTime?: string;
 
   // Vol
-  duration?: string;              // ex: "PT3H10M" (ISO Duffel)
-  stops?: number;                 // nb d’escales
+  duration?: string;
+  stops?: number;
 
   // Prix
-  priceAmount?: number;           // ex: 129.99
-  priceCurrency?: string;         // ex: "EUR"
+  priceAmount?: number;
+  priceCurrency?: string;
 
   // Coordonnées (pour la carte)
   departureLatitude?: number;
@@ -45,7 +44,45 @@ export interface FlightOffer {
   arrivalLatitude?: number;
   arrivalLongitude?: number;
 
-  // On garde ces champs génériques pour compat rétro
+  // ✅ NOUVEAUX CHAMPS pour ALLER-RETOUR
+  slices?: Array<{
+    origin: string;
+    destination: string;
+    departureTime: string;
+    arrivalTime: string;
+    duration: string;
+    stops: number;
+    segments: Array<{
+      origin: string;
+      destination: string;
+      departingAt: string;
+      arrivingAt: string;
+      duration: string;
+      marketingCarrier?: string;
+      operatingCarrier?: string;
+      flightNumber?: string;
+    }>;
+  }>;
+
+  // Champs retour (backward compat)
+  returnOrigin?: string;
+  returnDestination?: string;
+  returnDepartureTime?: string;
+  returnArrivalTime?: string;
+  returnDuration?: string;
+  returnStops?: number;
+  returnSegments?: Array<{
+    origin: string;
+    destination: string;
+    departingAt: string;
+    arrivingAt: string;
+    duration: string;
+    marketingCarrier?: string;
+    operatingCarrier?: string;
+    flightNumber?: string;
+  }>;
+
+  // Compat rétro
   airline?: string;
   origin?: string;
   destination?: string;
@@ -54,6 +91,16 @@ export interface FlightOffer {
   durationMinutes?: number;
   price?: number;
   currency?: string;
+  segments?: Array<{
+    origin: string;
+    destination: string;
+    departingAt: string;
+    arrivingAt: string;
+    duration: string;
+    marketingCarrier?: string;
+    operatingCarrier?: string;
+    flightNumber?: string;
+  }>;
 }
 
 // Base URL du backend
@@ -63,12 +110,21 @@ export const API_BASE_URL =
 export async function searchFlights(
   params: FlightSearchParams
 ): Promise<FlightOffer[]> {
+  // ✅ On nettoie returnDate si vide
+  const cleanParams = {
+    ...params,
+    returnDate:
+      params.returnDate && params.returnDate.trim() !== ""
+        ? params.returnDate.trim()
+        : undefined,
+  };
+
   const response = await fetch(`${API_BASE_URL}/api/flights/search`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(params),
+    body: JSON.stringify(cleanParams),
   });
 
   if (!response.ok) {
@@ -78,15 +134,10 @@ export async function searchFlights(
 
   const data = await response.json();
 
-  // On accepte plusieurs formats possibles pour rester tolérant :
-  // { flights: [...] } ou { offers: [...] } ou { data: { offers: [...] } } etc.
   const rawOffers =
     data.flights || data.offers || data.data?.offers || data.data || [];
 
-  // On ne remappe pas ici : on suppose que le backend renvoie déjà
-  // des objets conformes au modèle FlightOffer (airlineName, priceAmount, etc.)
-  // Si ce n’est pas le cas, tu pourras ajuster le mapping ici.
   const offers: FlightOffer[] = rawOffers;
 
-  return offers;
+  return dedupeKeepCheapest(offers);
 }

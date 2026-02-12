@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { MdClose, MdTune } from "react-icons/md";
 import SummaryCards from "../../SummaryCards";
 import FiltersPanel from "../../FiltersPanel";
@@ -18,6 +18,26 @@ interface Flight {
   stops: number;
   origin: string;
   destination: string;
+  segments?: any[];
+  
+  // ✅ ALLER-RETOUR SUPPORT
+  slices?: Array<{
+    origin: string;
+    destination: string;
+    departureTime: string;
+    arrivalTime: string;
+    duration: string;
+    stops: number;
+    segments: any[];
+  }>;
+  
+  returnOrigin?: string;
+  returnDestination?: string;
+  returnDepartureTime?: string;
+  returnArrivalTime?: string;
+  returnDuration?: string;
+  returnStops?: number;
+  returnSegments?: any[];
 }
 
 type SortType = null | "cheapest" | "fastest" | "bestValue";
@@ -29,12 +49,19 @@ interface FilterState {
   airlines: string[];
 }
 
+type SearchValues = {
+  from: string;
+  to: string;
+  date: string;
+  returnDate?: string | null;
+};
+
 interface SearchResultsProps {
   flights: Flight[];
   isLoading: boolean;
   error: string | null;
-  searchParams: { from: string; to: string; date: string } | null;
-  onSearch: (params: { from: string; to: string; date: string }) => void;
+  searchParams: SearchValues | null;
+  onSearch: (params: SearchValues) => void;
 }
 
 function parseDuration(durationStr: string): number {
@@ -43,13 +70,27 @@ function parseDuration(durationStr: string): number {
     let totalMinutes = 0;
     const dayMatch = durationStr.match(/P(\d+)D/);
     if (dayMatch) totalMinutes += parseInt(dayMatch[1]) * 24 * 60;
+
     const hourMatch = durationStr.match(/T(\d+)H/);
     if (hourMatch) totalMinutes += parseInt(hourMatch[1]) * 60;
+
     const minMatch = durationStr.match(/(\d+)M/);
     if (minMatch) totalMinutes += parseInt(minMatch[1]);
+
     return totalMinutes;
   } catch {
     return 0;
+  }
+}
+
+function formatShortDate(dateStr: string): string {
+  try {
+    return new Date(dateStr).toLocaleDateString("fr-FR", {
+      day: "2-digit",
+      month: "short",
+    });
+  } catch {
+    return "—";
   }
 }
 
@@ -73,6 +114,51 @@ export default function SearchResults({
 
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+
+  // 🔥🔥🔥 DEBUG POUR VÉRIFIER LES DONNÉES 🔥🔥🔥
+  useEffect(() => {
+    if (flights && flights.length > 0) {
+      console.log("=== 🛫 DEBUG VOLS REÇUS ===");
+      console.log("📊 Nombre total:", flights.length);
+      
+      (window as any).flights = flights;
+      
+      const first = flights[0];
+      console.log("\n🎫 PREMIER VOL:");
+      console.log("ID:", first.id);
+      console.log("Airline:", first.airline);
+      console.log("Prix:", first.price, first.currency);
+      
+      console.log("\n🛫 ALLER (outbound):");
+      console.log("- origin:", first.origin);
+      console.log("- destination:", first.destination);
+      console.log("- departureTime:", first.departureTime);
+      console.log("- arrivalTime:", first.arrivalTime);
+      
+      console.log("\n🛬 RETOUR (return fields):");
+      console.log("- returnOrigin:", (first as any).returnOrigin);
+      console.log("- returnDestination:", (first as any).returnDestination);
+      console.log("- returnDepartureTime:", (first as any).returnDepartureTime);
+      console.log("- returnArrivalTime:", (first as any).returnArrivalTime);
+      
+      console.log("\n📦 SLICES:");
+      console.log("- slices:", (first as any).slices);
+      if ((first as any).slices && (first as any).slices.length > 0) {
+        console.log("  ✅ Slice[0]:", (first as any).slices[0]);
+        if ((first as any).slices.length > 1) {
+          console.log("  ✅ Slice[1]:", (first as any).slices[1]);
+        } else {
+          console.log("  ❌ PAS DE Slice[1]");
+        }
+      }
+      
+      const withReturn = flights.filter((f: any) => 
+        f.returnDepartureTime || (f.slices && f.slices.length > 1)
+      );
+      console.log(`\n✅ Vols avec retour: ${withReturn.length}/${flights.length}`);
+    }
+  }, [flights]);
+  // 🔥🔥🔥 FIN DU DEBUG 🔥🔥🔥
 
   const hasActiveFilters =
     filters.priceMin !== null ||
@@ -136,10 +222,10 @@ export default function SearchResults({
     setSelectedFlight(null);
   };
 
-  const dateLabel = new Date(searchParams.date).toLocaleDateString("fr-FR", {
-    day: "2-digit",
-    month: "short",
-  });
+  const dateLabel =
+    searchParams.returnDate && searchParams.returnDate.trim() !== ""
+      ? `${formatShortDate(searchParams.date)} – ${formatShortDate(searchParams.returnDate)}`
+      : formatShortDate(searchParams.date);
 
   return (
     <>
@@ -148,6 +234,7 @@ export default function SearchResults({
           <h3 className="text-2xl font-bold text-slate-900 mb-2">
             {searchParams.from} → {searchParams.to}
           </h3>
+
           <p className="text-slate-600 text-sm">
             {new Date(searchParams.date).toLocaleDateString("fr-FR", {
               weekday: "long",
@@ -155,6 +242,18 @@ export default function SearchResults({
               month: "long",
               day: "numeric",
             })}
+            {searchParams.returnDate ? (
+              <>
+                {" "}
+                • Retour:{" "}
+                {new Date(searchParams.returnDate).toLocaleDateString("fr-FR", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </>
+            ) : null}
           </p>
         </div>
 
@@ -208,7 +307,6 @@ export default function SearchResults({
 
               <p className="text-slate-600 font-medium text-sm mb-6">
                 {sortedFlights.length} vol{sortedFlights.length !== 1 ? "s" : ""} disponible
-                {sortedFlights.length !== 1 ? "s" : ""}
                 {filteredFlights.length < flights.length && (
                   <span className="text-slate-500"> (filtrés de {flights.length})</span>
                 )}
@@ -227,8 +325,8 @@ export default function SearchResults({
                   {sortedFlights.map((flight) => (
                     <FlightTicketCard
                       key={flight.id}
-                      flight={flight}
-                      onViewDetails={handleOpenModal}
+                      flight={flight as any}
+                      onViewDetails={handleOpenModal as any}
                     />
                   ))}
                 </div>
@@ -242,7 +340,6 @@ export default function SearchResults({
         )}
       </div>
 
-      {/* Mobile bottom bar */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
           <button
@@ -253,9 +350,7 @@ export default function SearchResults({
             <div className="text-sm font-semibold text-slate-900">
               {searchParams.from} → {searchParams.to}
             </div>
-            <div className="text-xs text-slate-500">
-              {dateLabel} • 1 passager
-            </div>
+            <div className="text-xs text-slate-500">{dateLabel} • 1 passager</div>
           </button>
 
           <button
@@ -272,13 +367,9 @@ export default function SearchResults({
         </div>
       </div>
 
-      {/* Mobile drawer: Search */}
       {isSearchOpen && (
         <div className="md:hidden fixed inset-0 z-50">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setIsSearchOpen(false)}
-          />
+          <div className="absolute inset-0 bg-black/40" onClick={() => setIsSearchOpen(false)} />
           <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 pt-6">
               <h3 className="font-bold text-lg text-slate-900">Modifier la recherche</h3>
@@ -296,7 +387,7 @@ export default function SearchResults({
               variant="drawer"
               isLoading={isLoading}
               initialValues={searchParams}
-              onSearch={(p) => {
+              onSearch={(p: any) => {
                 setIsSearchOpen(false);
                 onSearch(p);
               }}
@@ -305,13 +396,9 @@ export default function SearchResults({
         </div>
       )}
 
-      {/* Mobile drawer: Filters */}
       {isFiltersOpen && (
         <div className="md:hidden fixed inset-0 z-50">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setIsFiltersOpen(false)}
-          />
+          <div className="absolute inset-0 bg-black/40" onClick={() => setIsFiltersOpen(false)} />
           <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl max-h-[85vh] overflow-y-auto">
             <FiltersPanel
               flights={flights}
@@ -323,11 +410,7 @@ export default function SearchResults({
         </div>
       )}
 
-      <FlightDetailsModal
-        flight={selectedFlight}
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-      />
+      <FlightDetailsModal flight={selectedFlight as any} isOpen={isModalOpen} onClose={handleCloseModal} />
     </>
   );
 }
